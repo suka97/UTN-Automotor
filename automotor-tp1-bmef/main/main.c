@@ -5,10 +5,14 @@
 #include "esp_log.h"
 #include "freertos/timers.h"
 #include "esp_adc/adc_oneshot.h"
+#include "driver/ledc.h"
 
 #define MY_GPIO_LED             2
 #define MY_GPIO_BUTTON          0   // Uses external pull-up resistor
 #define MY_ADC1_CHAN_SPEED      ADC_CHANNEL_0
+#define MY_PWM_FREQ             1000
+
+#define LEDC_MODE               LEDC_HIGH_SPEED_MODE
 
 
 adc_oneshot_unit_handle_t adc1_handle;
@@ -47,9 +51,37 @@ esp_err_t init_adc(void) {
 }
 
 
+esp_err_t init_pwm(void) {
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LEDC_MODE,
+        .timer_num        = LEDC_TIMER_0,
+        .duty_resolution  = LEDC_TIMER_12_BIT,  // TODO check right resolution
+        .freq_hz          = MY_PWM_FREQ,  // Set output frequency at 4 kHz
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = LEDC_MODE,
+        .channel        = LEDC_CHANNEL_0,
+        .timer_sel      = LEDC_TIMER_0,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = MY_GPIO_LED,
+        .duty           = 0, // Set duty to 0%
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+    
+    return ESP_OK;
+}
+
+
 void app_main(void) {
     ESP_ERROR_CHECK( init_gpios() );
     ESP_ERROR_CHECK( init_adc() );
+    ESP_ERROR_CHECK( init_pwm() );
 
     while(1) {
         // if (gpio_get_level(GPIO_BUTTON) == 0) {
@@ -59,9 +91,14 @@ void app_main(void) {
         // }
         // vTaskDelay(10 / portTICK_PERIOD_MS);
 
+        // Read ADC
         int adc_raw;
         ESP_ERROR_CHECK( adc_oneshot_read(adc1_handle, MY_ADC1_CHAN_SPEED, &adc_raw) );
         printf("/*%d*/\r\n", adc_raw);
-        vTaskDelay(200 / portTICK_PERIOD_MS);
+        // Set PWM
+        ESP_ERROR_CHECK( ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_0, adc_raw) );
+        ESP_ERROR_CHECK( ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_0) );
+
+        vTaskDelay(50 / portTICK_PERIOD_MS);
     }
 }
