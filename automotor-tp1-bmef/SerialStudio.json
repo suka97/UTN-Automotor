@@ -1,0 +1,30 @@
+{
+    "frameEnd": "",
+    "frameParser": "/* \n * @brief Frame parsing function, you can modify this to suit your needs.\n * \n * By customizing this code, you can use a single JSON project file to \n * process different kinds of frames that are sent by the microcontroller \n * or any data source that is connected to Serial Studio. Frame parsing code\n * is specific to every JSON project that you create.\n *\n * @param frame      string with the latest received frame.\n * @param separator  data separator sequence defined by the JSON project.\n *\n * @note.            only data that is *inside* the data delimiters will\n *                   be processed by the frame parser.\n *\n * @note             you can safely declare global variables outside the\n *                   @c parse() function.\n */\nfunction parse(frame, separator) {\n    return frame.split(separator);\n}",
+    "frameStart": "",
+    "groups": [
+        {
+            "datasets": [
+                {
+                    "alarm": 5000,
+                    "fft": false,
+                    "fftSamples": 1024,
+                    "graph": true,
+                    "index": 1,
+                    "led": false,
+                    "log": false,
+                    "max": 5000,
+                    "min": 0,
+                    "title": "ADC",
+                    "units": "",
+                    "value": "",
+                    "widget": ""
+                }
+            ],
+            "title": "Group1",
+            "widget": ""
+        }
+    ],
+    "separator": "",
+    "title": "Automotor-TP1-BMEF"
+}

@@ -13,5 +13,6 @@
     ],
     "idf.port": "/dev/ttyUSB0",
     "idf.pythonBinPath": "/home/suka/.espressif/python_env/idf5.2_py3.10_env/bin/python",
-    "idf.toolsPath": "/home/suka/.espressif"
+    "idf.toolsPath": "/home/suka/.espressif",
+    "idf.flashType": "UART"
 }
