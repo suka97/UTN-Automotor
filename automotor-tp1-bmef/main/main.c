@@ -182,9 +182,12 @@ void vTaskReadInputs(void *pvParameters) {
                 ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_0);
             } else {
                 pwm_enabled = true;
-                ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_0, adc_raw_speed);
-                ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_0);
             }
+        }
+        // Update PWM duty
+        if (pwm_enabled) {
+            ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_0, adc_raw_speed);
+            ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_0);
         }
         // Calculate PCNT frequency
         pcnt_get_freq();
