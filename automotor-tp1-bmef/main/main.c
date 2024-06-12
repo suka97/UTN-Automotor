@@ -15,6 +15,7 @@ static const char *TAG = "main";
 #define MY_GPIO_LED             2
 #define MY_GPIO_BUTTON          0   // Uses external pull-up resistor
 #define MY_GPIO_PCNT_SPEED      23
+#define MY_GPIO_PWM_IN          22
 #define MY_ADC1_CHAN_SPEED      ADC_CHANNEL_0
 #define MY_ADC1_CHAN_BMEF       ADC_CHANNEL_3
 #define MY_ADC1_CHAN_CURRENT    ADC_CHANNEL_6
@@ -48,8 +49,13 @@ gptimer_handle_t bmef_timer = NULL;
 esp_err_t init_gpios(void) {
     // Led GPIO
     gpio_reset_pin(MY_GPIO_LED);
-    ESP_ERROR_CHECK( gpio_set_direction(MY_GPIO_LED, GPIO_MODE_OUTPUT) );
+    ESP_ERROR_CHECK( gpio_set_direction(MY_GPIO_LED, GPIO_MODE_INPUT_OUTPUT) );
     gpio_set_level(MY_GPIO_LED, 0);
+
+    // PWM IN (Led Loopback) 
+    // TODO check if it can be same output pin and use INPUT_OUTPUT_OD
+    gpio_reset_pin(MY_GPIO_PWM_IN);
+    ESP_ERROR_CHECK( gpio_set_direction(MY_GPIO_PWM_IN, GPIO_MODE_INPUT) );
     
     // Button GPIO
     gpio_reset_pin(MY_GPIO_BUTTON);
@@ -197,9 +203,9 @@ static bool IRAM_ATTR bmef_timer_event(gptimer_handle_t timer, const gptimer_ala
 esp_err_t init_bemf_measure(void) {
     bmef_queue = xQueueCreate(10, sizeof(int));
     // Interrupt on falling edge
-    ESP_ERROR_CHECK( gpio_set_intr_type(MY_GPIO_LED, GPIO_INTR_NEGEDGE) );
+    ESP_ERROR_CHECK( gpio_set_intr_type(MY_GPIO_PWM_IN, GPIO_INTR_NEGEDGE) );
     ESP_ERROR_CHECK( gpio_install_isr_service(0) );     // TODO check ESP_INTR_FLAG_DEFAULT
-    ESP_ERROR_CHECK( gpio_isr_handler_add(MY_GPIO_LED, bmef_lowedge_isr_handler, NULL) );
+    ESP_ERROR_CHECK( gpio_isr_handler_add(MY_GPIO_PWM_IN, bmef_lowedge_isr_handler, NULL) );
     // Init timer
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
@@ -226,7 +232,6 @@ void vTaskBMEFmeasure(void *pvParameters) {
         vTaskSuspend(NULL); // Suspend Ourselves
 
         ESP_ERROR_CHECK( adc_oneshot_read(adc1_handle, MY_ADC1_CHAN_BMEF, &adc_raw_bmef) );
-        ESP_LOGI(TAG, "vTaskBMEFmeasure");
     }
 }
 
@@ -295,7 +300,6 @@ void app_main(void) {
     ESP_ERROR_CHECK( init_tasks() );
 
     while(1) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        // vTaskSuspend(NULL); // Suspend main task
+        vTaskSuspend(NULL); // Suspend main task
     }
 }
