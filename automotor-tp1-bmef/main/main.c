@@ -8,6 +8,7 @@
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
 #include "esp_timer.h"
+#include "driver/gptimer.h"
 
 static const char *TAG = "main";
 
@@ -20,6 +21,7 @@ static const char *TAG = "main";
 
 #define MY_PWM_FREQ             1000
 #define MY_READ_INTERVAL_MS     10
+#define MY_BMEF_READ_DELAY_US   300
 
 #define LEDC_MODE               LEDC_HIGH_SPEED_MODE
 #define PCNT_HIGH_LIMIT         10
@@ -31,9 +33,16 @@ uint32_t pwm_duty = 0;
 bool pwm_enabled = false;
 int adc_raw_speed, adc_raw_bmef, adc_raw_current;
 
+TaskHandle_t xHandleReadInputs = NULL;
+TaskHandle_t xHandleDebug = NULL;
+TaskHandle_t xHandleBMEFmeasure = NULL;
+
 pcnt_unit_handle_t pcnt_unit = NULL;
-QueueHandle_t pcnt_queue = NULL;
+static QueueHandle_t pcnt_queue = NULL;
 int pcnt_freq = 0.0;
+
+static QueueHandle_t bmef_queue = NULL;
+gptimer_handle_t bmef_timer = NULL;
 
 
 esp_err_t init_gpios(void) {
@@ -170,6 +179,58 @@ void pcnt_get_freq(void) {
 }
 
 
+static void IRAM_ATTR bmef_lowedge_isr_handler(void* arg) {
+    gptimer_start(bmef_timer);
+}
+
+static bool IRAM_ATTR bmef_timer_event(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data) {
+    BaseType_t high_task_awoken = pdFALSE;
+    // stop timer immediately
+    gptimer_stop(timer);
+    // Resume BMEF Task for reading
+    high_task_awoken = xTaskResumeFromISR(xHandleBMEFmeasure);
+    // return whether we need to yield at the end of ISR
+    return (high_task_awoken == pdTRUE);
+}
+
+
+esp_err_t init_bemf_measure(void) {
+    bmef_queue = xQueueCreate(10, sizeof(int));
+    // Interrupt on falling edge
+    ESP_ERROR_CHECK( gpio_set_intr_type(MY_GPIO_LED, GPIO_INTR_NEGEDGE) );
+    ESP_ERROR_CHECK( gpio_install_isr_service(0) );     // TODO check ESP_INTR_FLAG_DEFAULT
+    ESP_ERROR_CHECK( gpio_isr_handler_add(MY_GPIO_LED, bmef_lowedge_isr_handler, NULL) );
+    // Init timer
+    gptimer_config_t timer_config = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1000000, // 1MHz, 1 tick=1us
+    };
+    ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &bmef_timer));
+    gptimer_event_callbacks_t cbs = {
+        .on_alarm = bmef_timer_event,
+    };
+    ESP_ERROR_CHECK(gptimer_register_event_callbacks(bmef_timer, &cbs, NULL));
+    gptimer_alarm_config_t alarm_config = {
+        .alarm_count = MY_BMEF_READ_DELAY_US, 
+    };
+    ESP_ERROR_CHECK(gptimer_set_alarm_action(bmef_timer, &alarm_config));
+    ESP_ERROR_CHECK(gptimer_enable(bmef_timer));
+
+    return ESP_OK;
+}
+
+
+void vTaskBMEFmeasure(void *pvParameters) {
+    while(1) {
+        vTaskSuspend(NULL); // Suspend Ourselves
+
+        ESP_ERROR_CHECK( adc_oneshot_read(adc1_handle, MY_ADC1_CHAN_BMEF, &adc_raw_bmef) );
+        ESP_LOGI(TAG, "vTaskBMEFmeasure");
+    }
+}
+
+
 void vTaskReadInputs(void *pvParameters) {
     while(1) {
         // Read ADC
@@ -203,6 +264,7 @@ void vTaskDebug(void *pvParameters) {
 
         printf("%d,", adc_raw_speed);
         printf("%d,", pcnt_freq);
+        printf("%d,", adc_raw_bmef);
 
         printf("*/\n");
         vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -210,14 +272,14 @@ void vTaskDebug(void *pvParameters) {
 }
 
 
-TaskHandle_t xHandleReadInputs = NULL;
-TaskHandle_t xHandleDebug = NULL;
-
 esp_err_t init_tasks(void) {
+    ESP_LOGI(TAG, "Starting tasks");
     xTaskCreate( vTaskReadInputs, "vTaskReadInputs", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, &xHandleReadInputs );
     configASSERT( xHandleReadInputs );
     xTaskCreate( vTaskDebug, "vTaskDebug", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, &xHandleDebug );
     configASSERT( xHandleDebug );
+    xTaskCreate( vTaskBMEFmeasure, "vTaskBMEFmeasure", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, &xHandleBMEFmeasure );
+    configASSERT( xHandleBMEFmeasure );
 
     return ESP_OK;
 }
@@ -228,6 +290,7 @@ void app_main(void) {
     ESP_ERROR_CHECK( init_adc() );
     ESP_ERROR_CHECK( init_pwm() );
     ESP_ERROR_CHECK( init_pcnt() );
+    ESP_ERROR_CHECK( init_bemf_measure() );
 
     ESP_ERROR_CHECK( init_tasks() );
 
