@@ -4,20 +4,15 @@
     "idf.customExtraPaths": "/home/suka/.espressif/tools/xtensa-esp-elf-gdb/14.2_20240403/xtensa-esp-elf-gdb/bin:/home/suka/.espressif/tools/riscv32-esp-elf-gdb/14.2_20240403/riscv32-esp-elf-gdb/bin:/home/suka/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20230928/xtensa-esp-elf/bin:/home/suka/.espressif/tools/riscv32-esp-elf/esp-13.2.0_20230928/riscv32-esp-elf/bin:/home/suka/.espressif/tools/esp32ulp-elf/2.35_20220830/esp32ulp-elf/bin:/home/suka/.espressif/tools/openocd-esp32/v0.12.0-esp32-20240318/openocd-esp32/bin:/home/suka/.espressif/tools/esp-rom-elfs/20230320",
     "idf.customExtraVars": {
         "OPENOCD_SCRIPTS": "/home/suka/.espressif/tools/openocd-esp32/v0.12.0-esp32-20240318/openocd-esp32/share/openocd/scripts",
+        "IDF_CCACHE_ENABLE": "1",
         "ESP_ROM_ELF_DIR": "/home/suka/.espressif/tools/esp-rom-elfs/20230320/"
     },
     "idf.espIdfPath": "/home/suka/esp/esp-idf",
     "idf.openOcdConfigs": [
-        "interface/ftdi/esp32_devkitj_v1.cfg",
-        "target/esp32.cfg"
+        "board/esp32-wrover-kit-3.3v.cfg"
     ],
-    "idf.port": "/dev/ttyUSB0",
+    "idf.port": "/dev/ttyUSB1",
     "idf.pythonBinPath": "/home/suka/.espressif/python_env/idf5.2_py3.10_env/bin/python",
     "idf.toolsPath": "/home/suka/.espressif",
-    "idf.flashType": "UART",
-    "files.associations": {
-        ".module": "php",
-        "ledc.h": "c",
-        "gpio.h": "c"
-    }
+    "idf.flashType": "UART"
 }
