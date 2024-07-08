@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -11,6 +12,10 @@ static const char *TAG = "UART TEST";
 #define MY_UART_PORT_NUM       UART_NUM_1
 #define MY_UART_BAUD_RATE      115200
 #define MY_UART_BUFFER_SIZE    1024
+#define MY_UART_TIMEOUT_MS     20
+
+char rx_buffer[MY_UART_BUFFER_SIZE];
+char tx_buffer[MY_UART_BUFFER_SIZE*2];
 
 
 esp_err_t init_uart(void) {
@@ -32,28 +37,72 @@ esp_err_t init_uart(void) {
 }
 
 
-void vTaskUartRx(void *pvParameters) {
-    uint8_t *data = (uint8_t *) malloc(MY_UART_BUFFER_SIZE);
-    while(1) {
-        int len = uart_read_bytes(MY_UART_PORT_NUM, data, MY_UART_BUFFER_SIZE, 20 / portTICK_PERIOD_MS);
-        if (len > 0) {
-            ESP_LOGI(TAG, "Read %d bytes: %s", len, data);
-        }
+// Check if PID is valid, returns ID if valid, -1 otherwise
+int _lin_get_id(uint8_t pid) {
+    // Ensure PID is within 8-bit range
+    pid &= 0xFF;
+    // Calculate P0: Parity of bits 0, 1, 2, and 4 (odd parity)
+    uint8_t p0 = ((pid >> 0) & 1) ^ ((pid >> 1) & 1) ^ ((pid >> 2) & 1) ^ ((pid >> 4) & 1);
+    // Calculate P1: Parity of bits 1, 3, 4, and 5 (odd parity)
+    uint8_t p1 = ~(((pid >> 1) & 1) ^ ((pid >> 3) & 1) ^ ((pid >> 4) & 1) ^ ((pid >> 5) & 1)) & 1;
+    // Check parity bits
+    if ( (p0 == ((pid >> 6) & 1)) && (p1 == ((pid >> 7) & 1)) ) {
+        return pid & 0x3F;
     }
-    free(data);
-    vTaskDelete(NULL);
+    return -1;
 }
 
 
-void vTaskUartTx(void *pvParameters) {
-    int counter = 0;
-    const uint8_t buffersize = 32;
-    char data[buffersize];
+int lin_receive() {
+    int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, MY_UART_BUFFER_SIZE, MY_UART_TIMEOUT_MS/portTICK_PERIOD_MS);
+    if (len == 0) {
+        return -1;
+    }
+
+    // Look for SyncField (0x55)
+    int i = 0;
+    for ( ; i < len; i++ ) {
+        if (rx_buffer[i] == 0x55) {
+            break;
+        }
+    }
+    if (i == len) {
+        ESP_LOGE(TAG, "SyncField not found");
+        return -1;
+    }
+
+    // Check if PID is valid
+    int id = _lin_get_id(rx_buffer[i+1]);
+    if (id == -1) {
+        ESP_LOGE(TAG, "Invalid PID");
+        return -1;
+    }
+    return id;
+}
+
+
+void lin_handle_id(int id) {
+    // Handle ID
+    switch (id) {
+        case 0x01:
+            ESP_LOGI(TAG, "ID 0x01");
+            break;
+        case 0x02:
+            ESP_LOGI(TAG, "ID 0x02");
+            break;
+        default:
+            ESP_LOGI(TAG, "Unknown ID");
+            break;
+    }
+}
+
+
+void vTaskUartRx(void *pvParameters) {
     while(1) {
-        ESP_LOGI(TAG, "Sending counter: %d", counter);
-        sprintf(data, "Counter: %d\n", counter++);
-        uart_write_bytes(MY_UART_PORT_NUM, data, buffersize);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        int id = lin_receive();
+        if (id != -1) {
+            lin_handle_id(id);
+        }
     }
 }
 
@@ -61,7 +110,6 @@ void vTaskUartTx(void *pvParameters) {
 esp_err_t init_tasks(void) {
     ESP_LOGI(TAG, "Starting tasks");
     xTaskCreate( vTaskUartRx, "vTaskUartRx", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL );
-    // xTaskCreate( vTaskUartTx, "vTaskUartTx", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL );
 
     return ESP_OK;
 }
