@@ -81,14 +81,37 @@ int lin_receive() {
 }
 
 
+// Calculate standard checksum (only data bytes)
+uint8_t _lin_checksum(uint8_t *data, int len) {
+    uint8_t checksum = 0;
+    for (int i = 0; i < len; i++) {
+        checksum += data[i];
+    }
+    return ~checksum;
+}
+
+
+void lin_send_data(void *data, int len) {
+    // Calculate checksum
+    uint8_t checksum = _lin_checksum(data, len);
+    // Send data
+    uart_write_bytes(MY_UART_PORT_NUM, tx_buffer, len);
+    uart_write_bytes(MY_UART_PORT_NUM, &checksum, 1);
+}
+
+
 void lin_handle_id(int id) {
     // Handle ID
     switch (id) {
         case 0x01:
             ESP_LOGI(TAG, "ID 0x01");
+            sprintf(tx_buffer, "Hello, World!");
+            lin_send_data(tx_buffer, strlen(tx_buffer));
             break;
         case 0x02:
             ESP_LOGI(TAG, "ID 0x02");
+            sprintf(tx_buffer, "Goodbye, World!");
+            lin_send_data(tx_buffer, strlen(tx_buffer));
             break;
         default:
             ESP_LOGI(TAG, "Unknown ID");

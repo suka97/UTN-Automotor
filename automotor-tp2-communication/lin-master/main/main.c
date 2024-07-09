@@ -13,8 +13,20 @@ static const char *TAG = "UART TEST";
 #define MY_UART_BUFFER_SIZE    1024
 #define MY_UART_TIMEOUT_MS     20
 
+#define LIN_MAX_DATA_SIZE       8
+
 char rx_buffer[MY_UART_BUFFER_SIZE];
 char tx_buffer[MY_UART_BUFFER_SIZE];
+
+
+// Calculate standard checksum (only data bytes)
+uint8_t _lin_checksum(uint8_t *data, int len) {
+    uint8_t checksum = 0;
+    for (int i = 0; i < len; i++) {
+        checksum += data[i];
+    }
+    return ~checksum;
+}
 
 
 // Calculate LIN PID Parity bits
@@ -31,12 +43,37 @@ uint8_t _lin_calc_pid(uint8_t id) {
 }
 
 
-esp_err_t lin_send(uint8_t id) {
+esp_err_t lin_send(uint8_t id, uint8_t *data_buffer, int max_len) {
     uint8_t pid = _lin_calc_pid(id);
 
     // TODO: Implement SyncBreack with additional GPIO
     uart_write_bytes(MY_UART_PORT_NUM, "\x55", 1); // Sync Byte
     uart_write_bytes(MY_UART_PORT_NUM, &pid, 1); // Sync Byte
+
+    // Get response
+    int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, MY_UART_BUFFER_SIZE, MY_UART_TIMEOUT_MS/portTICK_PERIOD_MS);
+    if (len == 0) {
+        return ESP_ERR_TIMEOUT;
+    }
+    else if (len == 1) {
+        ESP_LOGE(TAG, "Missing data, only 1 byte received");
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    else if (len > max_len) {
+        ESP_LOGE(TAG, "Buffer overflow: %d", len);
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Copy data (avoiding checksum)
+    for (int i = 1; i < len; i++) {
+        data_buffer[i-1] = rx_buffer[i];
+    }
+
+    // Check checksum
+    if ( rx_buffer[0] != _lin_checksum(data_buffer, len-1) ) {
+        ESP_LOGE(TAG, "Invalid response checksum: %d", rx_buffer[0]);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
 
     return ESP_OK;
 }
@@ -61,22 +98,15 @@ esp_err_t init_uart(void) {
 }
 
 
-void vTaskUartRx(void *pvParameters) {
-    while(1) {
-        int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, MY_UART_BUFFER_SIZE, MY_UART_TIMEOUT_MS/portTICK_PERIOD_MS);
-        if (len > 0) {
-            ESP_LOGI(TAG, "Read %d bytes: %s", len, rx_buffer);
-        }
-    }
-}
-
-
 void vTaskUartTx(void *pvParameters) {
     int counter = 0;
+    uint8_t data_buffer[LIN_MAX_DATA_SIZE];
     while(1) {
         for ( counter = 0 ; counter < 10 ; counter++ ) {
             ESP_LOGI(TAG, "Sending id: %d", counter);
-            ESP_ERROR_CHECK( lin_send(counter) );
+            //ESP_ERROR_CHECK( lin_send(counter, data_buffer, LIN_MAX_DATA_SIZE) );
+            lin_send(counter, data_buffer, LIN_MAX_DATA_SIZE);
+
 
             vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
@@ -87,7 +117,6 @@ void vTaskUartTx(void *pvParameters) {
 esp_err_t init_tasks(void) {
     ESP_LOGI(TAG, "Starting tasks");
     xTaskCreate( vTaskUartTx, "vTaskUartTx", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL );
-    // xTaskCreate( vTaskUartRx, "vTaskUartRx", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL );
 
     return ESP_OK;
 }
