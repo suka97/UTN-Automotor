@@ -10,7 +10,7 @@ static const char *TAG = "UART TEST";
 #define TASKS_STACK_SIZE        2048
 
 #define MY_UART_PORT_NUM       UART_NUM_1
-#define MY_UART_BAUD_RATE      115200
+#define MY_UART_BAUD_RATE      9600
 #define MY_UART_BUFFER_SIZE    1024
 #define MY_UART_TIMEOUT_MS     20
 
@@ -32,6 +32,7 @@ esp_err_t init_uart(void) {
     ESP_ERROR_CHECK(uart_driver_install(MY_UART_PORT_NUM, MY_UART_BUFFER_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
     ESP_ERROR_CHECK(uart_param_config(MY_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(MY_UART_PORT_NUM, 10, 9, -1, -1));
+    uart_set_rx_timeout(MY_UART_PORT_NUM, 1);   // read timeout en simbolos !! (sino responde 10ms despues)
 
     return ESP_OK;
 }
@@ -54,7 +55,7 @@ int _lin_get_id(uint8_t pid) {
 
 
 int lin_receive() {
-    int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, MY_UART_BUFFER_SIZE, MY_UART_TIMEOUT_MS/portTICK_PERIOD_MS);
+    int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, 2, portMAX_DELAY);
     if (len == 0) {
         return -1;
     }
@@ -105,16 +106,16 @@ void lin_handle_id(int id) {
     switch (id) {
         case 0x01:
             ESP_LOGI(TAG, "ID 0x01");
-            sprintf(tx_buffer, "Hello, World!");
-            lin_send_data(tx_buffer, strlen(tx_buffer));
+            sprintf(tx_buffer, "Hel");
+            lin_send_data(tx_buffer, strlen(tx_buffer)+1);
             break;
         case 0x02:
             ESP_LOGI(TAG, "ID 0x02");
-            sprintf(tx_buffer, "Goodbye, World!");
-            lin_send_data(tx_buffer, strlen(tx_buffer));
+            sprintf(tx_buffer, "Goo");
+            lin_send_data(tx_buffer, strlen(tx_buffer)+1);
             break;
         default:
-            ESP_LOGI(TAG, "Unknown ID");
+            ESP_LOGI(TAG, "Unknown ID: 0x%02X", id);
             break;
     }
 }
@@ -132,7 +133,7 @@ void vTaskUartRx(void *pvParameters) {
 
 esp_err_t init_tasks(void) {
     ESP_LOGI(TAG, "Starting tasks");
-    xTaskCreate( vTaskUartRx, "vTaskUartRx", TASKS_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL );
+    xTaskCreate( vTaskUartRx, "vTaskUartRx", TASKS_STACK_SIZE, NULL, configMAX_PRIORITIES-1, NULL );
 
     return ESP_OK;
 }

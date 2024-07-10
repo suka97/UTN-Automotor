@@ -9,11 +9,11 @@ static const char *TAG = "UART TEST";
 #define TASKS_STACK_SIZE        2048
 
 #define MY_UART_PORT_NUM       UART_NUM_1
-#define MY_UART_BAUD_RATE      115200
+#define MY_UART_BAUD_RATE      9600
 #define MY_UART_BUFFER_SIZE    1024
 #define MY_UART_TIMEOUT_MS     20
 
-#define LIN_MAX_DATA_SIZE       8
+#define LIN_MAX_DATA_SIZE       24
 
 char rx_buffer[MY_UART_BUFFER_SIZE];
 char tx_buffer[MY_UART_BUFFER_SIZE];
@@ -65,13 +65,16 @@ esp_err_t lin_send(uint8_t id, uint8_t *data_buffer, int max_len) {
     }
 
     // Copy data (avoiding checksum)
-    for (int i = 1; i < len; i++) {
-        data_buffer[i-1] = rx_buffer[i];
+    for (int i = 0 ; i < len-1 ; i++) {
+        data_buffer[i] = rx_buffer[i];
+        printf("%02X ", rx_buffer[i]);
     }
+    printf("\n");
 
     // Check checksum
-    if ( rx_buffer[0] != _lin_checksum(data_buffer, len-1) ) {
-        ESP_LOGE(TAG, "Invalid response checksum: %d", rx_buffer[0]);
+    uint8_t checksum = rx_buffer[len-1];
+    if ( checksum != _lin_checksum(data_buffer, len-1) ) {
+        ESP_LOGE(TAG, "Invalid response checksum: %d", checksum);
         return ESP_ERR_INVALID_RESPONSE;
     }
 
@@ -93,6 +96,7 @@ esp_err_t init_uart(void) {
     ESP_ERROR_CHECK(uart_driver_install(MY_UART_PORT_NUM, MY_UART_BUFFER_SIZE, 0, 0, NULL, intr_alloc_flags));
     ESP_ERROR_CHECK(uart_param_config(MY_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(MY_UART_PORT_NUM, 10, 9, -1, -1));
+    uart_set_rx_timeout(MY_UART_PORT_NUM, 1);   // read timeout en simbolos !! (sino responde 10ms despues)
 
     return ESP_OK;
 }
@@ -102,11 +106,16 @@ void vTaskUartTx(void *pvParameters) {
     int counter = 0;
     uint8_t data_buffer[LIN_MAX_DATA_SIZE];
     while(1) {
-        for ( counter = 0 ; counter < 10 ; counter++ ) {
+        for ( counter = 0 ; counter < 5 ; counter++ ) {
             ESP_LOGI(TAG, "Sending id: %d", counter);
             //ESP_ERROR_CHECK( lin_send(counter, data_buffer, LIN_MAX_DATA_SIZE) );
-            lin_send(counter, data_buffer, LIN_MAX_DATA_SIZE);
-
+            esp_err_t res = lin_send(counter, data_buffer, LIN_MAX_DATA_SIZE);
+            if (res == ESP_OK) {
+                ESP_LOGI(TAG, "Response: %s", data_buffer);
+            }
+            else {
+                ESP_LOGE(TAG, "Error: %d", res);
+            }
 
             vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
