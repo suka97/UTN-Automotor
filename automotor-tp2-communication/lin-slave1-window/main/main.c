@@ -31,6 +31,7 @@ esp_err_t init_uart(void) {
     ESP_ERROR_CHECK(uart_param_config(MY_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(MY_UART_PORT_NUM, 10, 9, -1, -1));
     uart_set_rx_timeout(MY_UART_PORT_NUM, 1);   // read timeout en simbolos !! (sino responde 10ms despues)
+    uart_set_line_inverse(MY_UART_PORT_NUM, UART_SIGNAL_TXD_INV);
 
     return ESP_OK;
 }
@@ -66,7 +67,7 @@ int lin_receive() {
         break;
     }
 
-    uart_get_buffered_data_len(MY_UART_PORT_NUM, &rx_len);
+    // uart_get_buffered_data_len(MY_UART_PORT_NUM, &rx_len);
     // ESP_LOGI(TAG, "Received %d bytes", rx_len);
 
     // Get all rx buffer
@@ -77,6 +78,11 @@ int lin_receive() {
         }
         data_len++;
     }
+
+    // for (int i = 0; i < data_len; i++) {
+    //     printf("%02X ", rx_buffer[i]);
+    // }
+    // printf("\n");
 
     // Check only last 2 bytes
     if (data_len < 2) {
@@ -118,6 +124,9 @@ void lin_send_data(void *data, int len) {
     // Send data
     uart_write_bytes(MY_UART_PORT_NUM, tx_buffer, len);
     uart_write_bytes(MY_UART_PORT_NUM, &checksum, 1);
+    // clear rx buffer for echo
+    uart_wait_tx_done(MY_UART_PORT_NUM, portMAX_DELAY);
+    uart_flush(MY_UART_PORT_NUM);
 }
 
 
@@ -135,7 +144,7 @@ void lin_handle_id(int id) {
             lin_send_data(tx_buffer, strlen(tx_buffer)+1);
             break;
         default:
-            ESP_LOGI(TAG, "Unknown ID: 0x%02X", id);
+            ESP_LOGW(TAG, "Unknown ID: 0x%02X", id);
             break;
     }
 }

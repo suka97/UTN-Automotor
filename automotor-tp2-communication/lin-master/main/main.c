@@ -48,11 +48,11 @@ uint8_t _lin_calc_pid(uint8_t id) {
 
 void lin_sync_break(void) {
     // Send Sync Break
-    gpio_set_level(LIN_SYNC_PIN, 0);
+    gpio_set_level(LIN_SYNC_PIN, 1);
     vTaskDelay(LIN_SYNC_DELAY_MS / portTICK_PERIOD_MS);
     // Sync Break End (como hay buffer, cambio el gpio durante ele envio)
     uart_write_bytes(MY_UART_PORT_NUM, "\x00", 1);
-    gpio_set_level(LIN_SYNC_PIN, 1);
+    gpio_set_level(LIN_SYNC_PIN, 0);
 }
 
 
@@ -62,6 +62,10 @@ esp_err_t lin_send(uint8_t id, uint8_t *data_buffer, int max_len) {
     lin_sync_break();
     uart_write_bytes(MY_UART_PORT_NUM, "\x55", 1); // Sync Byte
     uart_write_bytes(MY_UART_PORT_NUM, &pid, 1); // Sync Byte
+
+    // clear rx buffer for echo
+    uart_wait_tx_done(MY_UART_PORT_NUM, portMAX_DELAY);
+    uart_flush(MY_UART_PORT_NUM);
 
     // Get response
     int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, MY_UART_BUFFER_SIZE, MY_UART_TIMEOUT_MS/portTICK_PERIOD_MS);
@@ -98,7 +102,8 @@ esp_err_t lin_send(uint8_t id, uint8_t *data_buffer, int max_len) {
 esp_err_t init_uart(void) {
     // Config extra Sync PIN
     gpio_reset_pin(LIN_SYNC_PIN);
-    gpio_set_direction(LIN_SYNC_PIN, GPIO_MODE_OUTPUT_OD);
+    gpio_set_direction(LIN_SYNC_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(LIN_SYNC_PIN, 0);
 
     // Config UART
     uart_config_t uart_config = {
@@ -113,6 +118,7 @@ esp_err_t init_uart(void) {
     ESP_ERROR_CHECK(uart_param_config(MY_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(MY_UART_PORT_NUM, 10, 9, -1, -1));
     uart_set_rx_timeout(MY_UART_PORT_NUM, 1);   // read timeout en simbolos !! (sino responde 10ms despues)
+    uart_set_line_inverse(MY_UART_PORT_NUM, UART_SIGNAL_TXD_INV);
 
     return ESP_OK;
 }
