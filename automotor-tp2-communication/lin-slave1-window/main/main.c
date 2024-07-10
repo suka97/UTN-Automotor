@@ -27,9 +27,7 @@ esp_err_t init_uart(void) {
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    int intr_alloc_flags = 0;
-
-    ESP_ERROR_CHECK(uart_driver_install(MY_UART_PORT_NUM, MY_UART_BUFFER_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
+    ESP_ERROR_CHECK(uart_driver_install(MY_UART_PORT_NUM, MY_UART_BUFFER_SIZE, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(MY_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(MY_UART_PORT_NUM, 10, 9, -1, -1));
     uart_set_rx_timeout(MY_UART_PORT_NUM, 1);   // read timeout en simbolos !! (sino responde 10ms despues)
@@ -55,27 +53,49 @@ int _lin_get_id(uint8_t pid) {
 
 
 int lin_receive() {
-    int len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, 2, portMAX_DELAY);
-    if (len == 0) {
-        return -1;
+    size_t rx_len = 0;
+    size_t data_len = 0;
+
+    // Wait for something to be received
+    while(1) {
+        rx_len = uart_read_bytes(MY_UART_PORT_NUM, rx_buffer, 1, portMAX_DELAY);
+        if (rx_len == 0) {
+            continue;
+        }
+        data_len = 1;
+        break;
     }
 
-    // Look for SyncField (0x55)
-    int i = 0;
-    for ( ; i < len; i++ ) {
-        if (rx_buffer[i] == 0x55) {
+    uart_get_buffered_data_len(MY_UART_PORT_NUM, &rx_len);
+    // ESP_LOGI(TAG, "Received %d bytes", rx_len);
+
+    // Get all rx buffer
+    while (1) {
+        rx_len = uart_read_bytes(MY_UART_PORT_NUM, &rx_buffer[data_len], 1, 0);
+        if (rx_len == 0) {
             break;
         }
+        data_len++;
     }
-    if (i == len) {
-        ESP_LOGE(TAG, "SyncField not found");
+
+    // Check only last 2 bytes
+    if (data_len < 2) {
+        ESP_LOGE(TAG, "Not enough data received");
+        return -1;
+    }
+    uint8_t word_sync = rx_buffer[data_len-2];
+    uint8_t word_pid = rx_buffer[data_len-1];
+
+    // Look for SyncField (0x55)
+    if (word_sync != 0x55) {
+        ESP_LOGE(TAG, "Invalid SyncField: 0x%02X", word_sync);
         return -1;
     }
 
     // Check if PID is valid
-    int id = _lin_get_id(rx_buffer[i+1]);
+    int id = _lin_get_id(word_pid);
     if (id == -1) {
-        ESP_LOGE(TAG, "Invalid PID");
+        ESP_LOGE(TAG, "Invalid PID: 0x%02X", word_pid);
         return -1;
     }
     return id;
